@@ -90,7 +90,7 @@ named!(
     )
 );
 
-pub fn parse(input: &[u8]) -> IResult<&[u8], Packet> {
+fn do_parse(input: &[u8]) -> IResult<&[u8], Packet> {
     let (input, version) = be_u16(input)?;
     let (input, length) = be_u16(input)?;
     let (remaining, input) = take(length - 4)(input)?; // already read 4 bytes
@@ -100,6 +100,7 @@ pub fn parse(input: &[u8]) -> IResult<&[u8], Packet> {
 
     let (_input, sets) = many1!(input, complete!(parse_set))?;
     assert_eq!(_input.len(), 0); // TODO: return a proper error here
+    assert_eq!(remaining.len(), 0); // TODO: return a proper error here
 
     Ok((
         remaining,
@@ -111,4 +112,12 @@ pub fn parse(input: &[u8]) -> IResult<&[u8], Packet> {
             sets,
         },
     ))
+}
+
+// TODO better error
+pub fn parse(input: &[u8]) -> anyhow::Result<Packet> {
+    match do_parse(input) {
+        Ok((_, packet)) => Ok(packet),
+        Err(err) => Err(anyhow::anyhow!("parsing error: {:?}", err)),
+    }
 }

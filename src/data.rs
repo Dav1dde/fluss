@@ -1,13 +1,35 @@
-use nom::number::complete::{be_u8, be_u16, be_u32, be_u64, be_u128};
-use nom::{named, call, map, map_res};
+use nom::number::complete::{be_u128, be_u16, be_u32, be_u64, be_u8};
+use nom::{call, named};
+use serde::Serialize;
+use serde_with::rust::display_fromstr;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
+#[derive(Debug, Serialize)]
 pub struct Record<'a> {
     pub id: u16,
     pub value: Value<'a>,
 }
 
-#[derive(Debug)]
+impl<'a> Record<'a> {
+    pub fn new(id: u16, value: Value<'a>) -> Self {
+        Self { id, value }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecordSet<'a> {
+    pub id: u16,
+    pub records: Vec<Record<'a>>,
+}
+
+impl<'a> RecordSet<'a> {
+    pub fn new(id: u16, records: Vec<Record<'a>>) -> Self {
+        Self { id, records }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
 pub enum Value<'a> {
     U8(u8),
     U16(u16),
@@ -17,6 +39,10 @@ pub enum Value<'a> {
     String(String),
     Ipv4Addr(Ipv4Addr),
     Ipv6Addr(Ipv6Addr),
+    #[serde(with = "display_fromstr")]
+    MacAddr6(macaddr::MacAddr6),
+    #[serde(with = "display_fromstr")]
+    MacAddr8(macaddr::MacAddr8),
     Unknown(&'a [u8]),
 }
 
@@ -27,7 +53,7 @@ macro_rules! val_from {
                 Self::$ident(value)
             }
         }
-    }
+    };
 }
 
 val_from!(u8, U8);
@@ -77,9 +103,33 @@ pub fn parse_bytes(input: &[u8]) -> Value {
 }
 
 pub fn parse_ipv4(input: &[u8]) -> Value {
-    read_u32(input).map(|val| Value::Ipv4Addr(val.1.into())).unwrap()
+    read_u32(input)
+        .map(|val| Value::Ipv4Addr(val.1.into()))
+        .unwrap()
 }
 
 pub fn parse_ipv6(input: &[u8]) -> Value {
-    read_u128(input).map(|val| Value::Ipv6Addr(val.1.into())).unwrap()
+    read_u128(input)
+        .map(|val| Value::Ipv6Addr(val.1.into()))
+        .unwrap()
+}
+
+pub fn parse_mac6(input: &[u8]) -> Value {
+    Value::MacAddr6(macaddr::MacAddr6::new(
+        input[0], input[1], input[2], input[3], input[4], input[5],
+    ))
+}
+
+pub fn parse_mac8(input: &[u8]) -> Value {
+    Value::MacAddr8(macaddr::MacAddr8::new(
+        input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7],
+    ))
+}
+
+pub fn parse_mac(input: &[u8]) -> Value {
+    match input.len() {
+        6 => parse_mac6(input),
+        8 => parse_mac8(input),
+        _ => panic!("invalid byte length {} for mac address", input.len()),
+    }
 }

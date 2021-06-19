@@ -21,25 +21,20 @@ async fn main() -> anyhow::Result<()> {
         })
         .init();
 
+    let publisher = fluss::publish::ElasticPublisher::new(elasticsearch::Elasticsearch::default());
+
     let socket = UdpSocket::bind("0.0.0.0:9999").await?;
 
-    let mut session = fluss::Session::new();
+    let session = fluss::ipfix::Session::new();
 
-    let mut buf = vec![0; 2048];
+    let mut buf = vec![0; u16::MAX as usize];
     loop {
         let (len, addr) = socket.recv_from(&mut buf).await?;
-        println!("\n{:?} bytes received from {:?}", len, addr);
+        tracing::info!("{:?} bytes received from {:?}", len, addr);
 
-        let (_, packet) = fluss::parse(&buf).unwrap();
-        for fluss::session::Set(id, fields) in session.feed(&packet) {
-            println!("set id {}", id);
-            for field in fields {
-                println!(
-                    "  {:>30}: {:?}",
-                    session.get_field_name(&field).unwrap_or("<?>"),
-                    field.1
-                );
-            }
+        let packet = fluss::ipfix::parse(&buf[0..len])?;
+        for rs in session.parse(&packet) {
+            publisher.publish(&rs, &session).await?;
         }
     }
 }
