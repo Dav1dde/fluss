@@ -3,6 +3,7 @@ use crate::ipfix::parser::{DataSet, FieldSpecifier};
 use crate::protocol::{parse_ipv4, parse_mac, parse_number};
 use macaddr::MacAddr6;
 use std::net::{IpAddr, Ipv4Addr};
+use std::time::Duration;
 
 const IPFIX_BYTES_IN: u16 = 1;
 const IPFIX_PACKETS_IN: u16 = 2;
@@ -13,6 +14,8 @@ const IPFIX_DST_PORT: u16 = 11;
 const IPFIX_IPV4_DST_ADDR: u16 = 12;
 const IPFIX_IPV4_DST_MASK: u16 = 13;
 const IPFIX_IPV4_NEXT_HOP: u16 = 15;
+const IPFIX_FLOW_END_SYSUPTIME: u16 = 21;
+const IPFIX_FLOW_START_SYSUPTIME: u16 = 22;
 const IPFIX_BYTES_OUT: u16 = 23;
 const IPFIX_PACKETS_OUT: u16 = 24;
 const IPFIX_VLAN_ID: u16 = 58;
@@ -60,6 +63,9 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
         let mut post_napt_dst_port = 0;
         let mut next_hop_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
+        let mut start = Duration::from_secs(0);
+        let mut end = Duration::from_secs(0);
+
         let mut input = set.data;
         for field in fields {
             // TODO better slicing, lot's of potential errors ...
@@ -73,6 +79,13 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
                 IPFIX_PACKETS_IN => packets = parse_number(data).as_u64().unwrap(),
                 IPFIX_BYTES_OUT => bytes = parse_number(data).as_u64().unwrap(),
                 IPFIX_PACKETS_OUT => packets = parse_number(data).as_u64().unwrap(),
+
+                IPFIX_FLOW_END_SYSUPTIME => {
+                    end = Duration::from_millis(parse_number(data).as_u64().unwrap())
+                }
+                IPFIX_FLOW_START_SYSUPTIME => {
+                    start = Duration::from_millis(parse_number(data).as_u64().unwrap())
+                }
 
                 IPFIX_MAC_SRC => src_mac = *parse_mac(data).as_mac6().unwrap(),
                 IPFIX_MAC_DST => dst_mac = *parse_mac(data).as_mac6().unwrap(),
@@ -114,6 +127,9 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
         Some(Fluss {
             r#type: FlowType::IPFIX,
             time_received: chrono::offset::Utc::now(),
+
+            flow_age: end - start,
+
             bytes,
             packets,
 

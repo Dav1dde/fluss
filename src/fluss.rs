@@ -1,19 +1,23 @@
 use chrono::{DateTime, Utc};
 use macaddr::MacAddr6;
 use serde::Serialize;
-use serde_with::{serde_as, DisplayFromStr};
+use serde_with::{serde_as, DisplayFromStr, DurationMilliSeconds};
 use std::net::IpAddr;
+use std::time::Duration;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Copy, Clone, Serialize)]
 pub enum FlowType {
     IPFIX,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Debug, Copy, Clone, Serialize)]
 pub struct Fluss {
     pub r#type: FlowType,
     pub time_received: DateTime<Utc>,
+
+    #[serde_as(as = "DurationMilliSeconds")]
+    pub flow_age: Duration,
 
     pub bytes: u64,
     pub packets: u64,

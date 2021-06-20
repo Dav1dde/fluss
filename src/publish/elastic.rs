@@ -10,7 +10,7 @@ impl ElasticPublisher {
         Self { client }
     }
 
-    pub async fn publish(&self, fluss: &Fluss) -> anyhow::Result<()> {
+    pub async fn publish(&self, fluss: Fluss) -> anyhow::Result<()> {
         // TODO bulk inserts with in memory batches, probably through a channel
         // and multiple workers
 

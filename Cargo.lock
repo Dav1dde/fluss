@@ -264,6 +264,7 @@ dependencies = [
  "chrono",
  "clap",
  "elasticsearch",
+ "futures",
  "macaddr",
  "nom",
  "nom-derive",

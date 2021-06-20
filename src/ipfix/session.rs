@@ -38,13 +38,17 @@ where
         // if not, all we miss is a few records
 
         use super::parser::Set::*;
-        packet.sets.iter().filter_map(move |set| match set {
-            TemplateSet(records) => {
-                self.add_records(records);
-                None
-            }
-            DataSet(data) => self.parse_data_set(data),
-        })
+        packet
+            .sets
+            .iter()
+            .filter_map(move |set| match set {
+                TemplateSet(records) => {
+                    self.add_records(records);
+                    None
+                }
+                DataSet(data) => Some(self.parse_data_set(data).into_iter()),
+            })
+            .flatten()
     }
 
     fn add_records(&self, records: &[TemplateRecord]) {
@@ -54,11 +58,21 @@ where
         }
     }
 
-    fn parse_data_set(&self, set: &DataSet<'a>) -> Option<P::Output> {
+    fn parse_data_set(&'a self, set: &DataSet<'a>) -> Vec<P::Output> {
         let templates = self.templates.read();
-        templates
-            .get(&set.id)
-            .and_then(|fields| self.parser.parse(fields, set))
+        let fields = match templates.get(&set.id) {
+            Some(v) => v,
+            None => return vec![],
+        };
+
+        let length = fields.iter().map(|f| f.length as usize).sum::<usize>();
+        // TODO: maybe can get rid of this collect, either by getting the lock in the iter,
+        // cloning the fields or some zip() magic
+        // TODO: make sure the set is divisble by `length`, otherwise error
+        set.data
+            .chunks(length)
+            .filter_map(move |data| self.parser.parse(&fields, &DataSet { id: set.id, data }))
+            .collect()
     }
 }
 

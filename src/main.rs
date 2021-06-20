@@ -33,8 +33,8 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("{:?} bytes received from {:?}", len, addr);
 
         let packet = fluss::ipfix::parse(&buf[0..len])?;
-        for rs in session.parse(&packet) {
-            publisher.publish(&rs).await?;
-        }
+
+        futures::future::try_join_all(session.parse(&packet).map(|rs| publisher.publish(rs)))
+            .await?;
     }
 }
