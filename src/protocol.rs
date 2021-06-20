@@ -1,3 +1,4 @@
+use macaddr::{MacAddr6, MacAddr8};
 use nom::number::complete::{be_u128, be_u16, be_u32, be_u64, be_u8};
 use nom::{call, named};
 use serde::Serialize;
@@ -40,10 +41,74 @@ pub enum Value<'a> {
     Ipv4Addr(Ipv4Addr),
     Ipv6Addr(Ipv6Addr),
     #[serde(with = "display_fromstr")]
-    MacAddr6(macaddr::MacAddr6),
+    MacAddr6(MacAddr6),
     #[serde(with = "display_fromstr")]
-    MacAddr8(macaddr::MacAddr8),
+    MacAddr8(MacAddr8),
     Unknown(&'a [u8]),
+}
+
+macro_rules! val_as {
+    ($name:ident, $type:ident) => {
+        val_as!($name, $type, $type);
+    };
+    ($name:ident, $type:ty, $ident:ident) => {
+        pub fn $name(&self) -> Option<&$type> {
+            match self {
+                Self::$ident(val) => Some(val),
+                _ => None,
+            }
+        }
+    };
+}
+
+impl<'a> Value<'a> {
+    pub fn as_u8(&self) -> Option<u8> {
+        match self {
+            Self::U8(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    pub fn as_u16(&self) -> Option<u16> {
+        match self {
+            Self::U8(val) => Some(*val as u16),
+            Self::U16(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    pub fn as_u32(&self) -> Option<u32> {
+        match self {
+            Self::U8(val) => Some(*val as u32),
+            Self::U16(val) => Some(*val as u32),
+            Self::U32(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        match self {
+            Self::U8(val) => Some(*val as u64),
+            Self::U16(val) => Some(*val as u64),
+            Self::U32(val) => Some(*val as u64),
+            Self::U64(val) => Some(*val),
+            _ => None,
+        }
+    }
+
+    pub fn as_bytes(&self) -> Option<&'a [u8]> {
+        match self {
+            Self::Bytes(val) => Some(val),
+            Self::Unknown(val) => Some(val),
+            _ => None,
+        }
+    }
+
+    val_as!(as_string, String);
+    val_as!(as_ipv4, Ipv4Addr);
+    val_as!(as_ipv6, Ipv6Addr);
+    val_as!(as_mac6, MacAddr6);
+    val_as!(as_mac8, MacAddr8);
 }
 
 macro_rules! val_from {

@@ -1,5 +1,5 @@
-mod parser;
+pub mod parser;
 pub mod session;
 
 pub use parser::{parse, Packet};
-pub use session::Session;
+pub use session::{FieldParser, Session};

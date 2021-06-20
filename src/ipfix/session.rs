@@ -1,68 +1,39 @@
 use super::parser::{DataSet, FieldSpecifier, Packet, TemplateRecord};
-use crate::data::{parse_ipv4, parse_ipv6, parse_mac, parse_number, Record, RecordSet, Value};
+use crate::protocol::{parse_ipv4, parse_ipv6, parse_mac, parse_number, Record, RecordSet, Value};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::iter::Iterator;
 
-pub struct Parser {
-    name: String,
-    func: fn(&[u8]) -> Value,
+pub trait Parser<'a> {
+    type Output;
+
+    fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output>;
 }
 
-impl Parser {
-    pub fn new(name: impl Into<String>, func: fn(&[u8]) -> Value) -> Self {
-        Self {
-            name: name.into(),
-            func,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn parse<'a>(&self, value: &'a [u8]) -> Value<'a> {
-        (self.func)(value)
-    }
-}
-
-pub struct Builder {
-    parsers: Option<HashMap<u16, Parser>>,
-}
-
-impl Builder {
-    fn new() -> Self {
-        Self { parsers: None }
-    }
-
-    pub fn with_default_parser(mut self) -> Self {
-        self.parsers = Some(get_default_parsers());
-        self
-    }
-
-    pub fn build(mut self) -> Session {
-        Session {
-            templates: RwLock::new(HashMap::new()),
-            parsers: self.parsers.take().unwrap_or_else(HashMap::new),
-        }
-    }
-}
-
-pub struct Session {
+pub struct Session<P> {
     templates: RwLock<HashMap<u16, Vec<FieldSpecifier>>>,
-    parsers: HashMap<u16, Parser>,
+    // parsers: HashMap<u16, Parser>,
+    parser: P,
 }
 
-impl Session {
-    pub fn new() -> Self {
-        Self::builder().with_default_parser().build()
+impl<P> Session<P> {
+    pub fn new(parser: P) -> Self {
+        Self {
+            templates: RwLock::new(HashMap::new()),
+            parser,
+        }
     }
 
-    pub fn builder() -> Builder {
-        Builder::new()
+    pub fn get_parser(&self) -> &P {
+        &self.parser
     }
+}
 
-    pub fn parse<'a>(&'a self, packet: &'a Packet) -> impl Iterator<Item = RecordSet<'a>> {
+impl<'a, P> Session<P>
+where
+    P: Parser<'a>,
+{
+    pub fn parse(&'a self, packet: &'a Packet) -> impl Iterator<Item = <P as Parser<'a>>::Output> {
         // let's assume for now template records always come first,
         // if not, all we miss is a few records
 
@@ -83,30 +54,45 @@ impl Session {
         }
     }
 
-    fn parse_data_set<'a>(&self, set: &DataSet<'a>) -> Option<RecordSet<'a>> {
+    fn parse_data_set(&self, set: &DataSet<'a>) -> Option<P::Output> {
         let templates = self.templates.read();
-        let fields = match templates.get(&set.id) {
-            Some(a) => a,
-            None => {
-                tracing::debug!("no record for set id {}", set.id);
-                return None;
-            }
-        };
+        templates
+            .get(&set.id)
+            .and_then(|fields| self.parser.parse(fields, set))
+    }
+}
 
+pub type FieldExtractor = fn(&[u8]) -> Value;
+struct NameFn(String, FieldExtractor);
+
+pub struct FieldParser {
+    parsers: HashMap<u16, NameFn>,
+}
+
+impl FieldParser {
+    pub fn builder() -> FieldParserBuilder {
+        FieldParserBuilder::new()
+    }
+}
+
+impl<'a> Parser<'a> for FieldParser {
+    type Output = RecordSet<'a>;
+
+    fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
         let mut result = Vec::new();
-
         let mut input = set.data;
+
         for field in fields {
             // TODO better slicing, lot's of potential errors ...
             // make the parser take care of that?
             let data = &input[0..field.length as usize];
             input = &input[field.length as usize..];
 
-            if let Some(parser) = self.parsers.get(&field.id) {
-                tracing::trace!(parser = parser.name(), "pre parse: {:?} {:?}", field, data);
-                let value = parser.parse(data);
+            if let Some(NameFn(name, parser)) = self.parsers.get(&field.id) {
+                tracing::trace!(parser = name.as_str(), "pre parse: {:?} {:?}", field, data);
+                let value = parser(data);
                 tracing::trace!(
-                    parser = parser.name(),
+                    parser = name.as_str(),
                     "post: parse: {:?} {:?}",
                     field,
                     value
@@ -123,32 +109,43 @@ impl Session {
     }
 }
 
-impl crate::publish::Lookup for Session {
-    fn get_record_name(&self, record: &Record) -> Option<&str> {
-        self.get_record_name_u16(record.id)
-    }
-
-    fn get_record_name_u16(&self, id: u16) -> Option<&str> {
-        self.parsers.get(&id).map(|parser| parser.name())
-    }
+pub struct FieldParserBuilder {
+    parsers: HashMap<u16, NameFn>,
 }
 
-impl Default for Session {
-    fn default() -> Self {
-        Self::new()
+impl FieldParserBuilder {
+    fn new() -> Self {
+        Self {
+            parsers: HashMap::new(),
+        }
+    }
+
+    pub fn with_default_fields(mut self) -> Self {
+        self.parsers.extend(get_default_field_parsers());
+        self
+    }
+
+    pub fn with_field(mut self, id: u16, name: impl Into<String>, fe: FieldExtractor) -> Self {
+        self.parsers.insert(id, NameFn(name.into(), fe));
+        self
+    }
+
+    pub fn build(self) -> FieldParser {
+        FieldParser {
+            parsers: self.parsers,
+        }
     }
 }
 
 macro_rules! map {
     ($($key:expr => ($name:expr, $parser:expr)),+) => {
         let mut m = HashMap::new();
-        $(m.insert($key, Parser::new($name, $parser));)+
+        $(m.insert($key, NameFn($name.to_string(), $parser));)+
         m
     }
 }
 
-// default field_parsers for enterprise number 0
-pub fn get_default_parsers() -> HashMap<u16, Parser> {
+fn get_default_field_parsers() -> HashMap<u16, NameFn> {
     map! {
         1 => ("octetDeltaCount", parse_number),
         2 => ("packetDeltaCount", parse_number),

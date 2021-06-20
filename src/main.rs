@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
 
     let socket = UdpSocket::bind("0.0.0.0:9999").await?;
 
-    let session = fluss::ipfix::Session::new();
+    let session = fluss::ipfix::Session::new(fluss::produce::IpfixParser::new());
 
     let mut buf = vec![0; u16::MAX as usize];
     loop {
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
 
         let packet = fluss::ipfix::parse(&buf[0..len])?;
         for rs in session.parse(&packet) {
-            publisher.publish(&rs, &session).await?;
+            publisher.publish(&rs).await?;
         }
     }
 }
