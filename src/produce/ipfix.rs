@@ -10,9 +10,11 @@ const IPFIX_PACKETS_IN: u16 = 2;
 const IPFIX_SRC_PORT: u16 = 7;
 const IPFIX_IPV4_SRC_ADDR: u16 = 8;
 const IPFIX_IPV4_SRC_MASK: u16 = 9;
+const IPFIX_INGRESS_INTERFACE: u16 = 10;
 const IPFIX_DST_PORT: u16 = 11;
 const IPFIX_IPV4_DST_ADDR: u16 = 12;
 const IPFIX_IPV4_DST_MASK: u16 = 13;
+const IPFIX_EGRESS_INTERFACE: u16 = 14;
 const IPFIX_IPV4_NEXT_HOP: u16 = 15;
 const IPFIX_FLOW_END_SYSUPTIME: u16 = 21;
 const IPFIX_FLOW_START_SYSUPTIME: u16 = 22;
@@ -48,9 +50,11 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
     fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
         let mut bytes = 0;
         let mut packets = 0;
+        let mut ingress_interface = 0;
+        let mut egress_interface = 0;
         let mut ethernet_type = 0;
-        let mut src_mac = MacAddr6::broadcast();
-        let mut dst_mac = MacAddr6::broadcast();
+        let mut src_mac = MacAddr6::nil();
+        let mut dst_mac = MacAddr6::nil();
         let mut src_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let mut dst_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let mut src_net = 0;
@@ -68,24 +72,16 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
         let mut start = Duration::from_secs(0);
         let mut end = Duration::from_secs(0);
 
-        let mut input = set.data;
-        for field in fields {
-            if input.len() < field.length as usize {
-                tracing::trace!("early exit, no more fields, next field: {:?}", field);
-                break;
-            }
-
-            // TODO better slicing, lot's of potential errors ...
-            // make the parser take care of that?
-            let data = &input[0..field.length as usize];
-            input = &input[field.length as usize..];
-
+        for (field, data) in set.with_fields(fields) {
             // TODO: better parsing to get rid of value wrapper
             match field.id {
                 IPFIX_BYTES_IN => bytes = parse_number(data).as_u64().unwrap(),
                 IPFIX_PACKETS_IN => packets = parse_number(data).as_u64().unwrap(),
                 IPFIX_BYTES_OUT => bytes = parse_number(data).as_u64().unwrap(),
                 IPFIX_PACKETS_OUT => packets = parse_number(data).as_u64().unwrap(),
+
+                IPFIX_INGRESS_INTERFACE => ingress_interface = parse_number(data).as_u32().unwrap(),
+                IPFIX_EGRESS_INTERFACE => egress_interface = parse_number(data).as_u32().unwrap(),
 
                 IPFIX_ETHERNET_TYPE => ethernet_type = parse_number(data).as_u16().unwrap(),
 
@@ -141,6 +137,9 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
 
             bytes,
             packets,
+
+            ingress_interface,
+            egress_interface,
 
             ethernet_type,
 

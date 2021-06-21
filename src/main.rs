@@ -11,6 +11,14 @@ async fn main() -> anyhow::Result<()> {
                 .multiple(true)
                 .help("verbosity level"),
         )
+        .arg(
+            Arg::with_name("publisher")
+                .long("publisher")
+                .short("p")
+                .possible_values(&["console", "elastic"])
+                .default_value("console")
+                .help("publisher for flow data"),
+        )
         .get_matches();
 
     tracing_subscriber::fmt()
@@ -21,7 +29,13 @@ async fn main() -> anyhow::Result<()> {
         })
         .init();
 
-    let publisher = fluss::publish::ElasticPublisher::new(elasticsearch::Elasticsearch::default());
+    let publisher: Box<dyn fluss::publish::Publisher> = match app.value_of("publisher") {
+        Some("elastic") => Box::new(fluss::publish::ElasticPublisher::new(
+            elasticsearch::Elasticsearch::default(),
+        )),
+        Some("console") => Box::new(fluss::publish::ConsolePublisher::new()),
+        _ => panic!("unknown or no publisher"),
+    };
 
     let socket = UdpSocket::bind("0.0.0.0:9999").await?;
 
@@ -34,7 +48,8 @@ async fn main() -> anyhow::Result<()> {
 
         let packet = fluss::ipfix::parse(&buf[0..len])?;
 
-        futures::future::try_join_all(session.parse(&packet).map(|rs| publisher.publish(rs)))
-            .await?;
+        for flow in session.parse(&packet) {
+            publisher.publish(&flow).await?;
+        }
     }
 }

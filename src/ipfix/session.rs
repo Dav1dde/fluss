@@ -97,16 +97,11 @@ impl<'a> Parser<'a> for FieldParser {
         let mut result = Vec::new();
         let mut input = set.data;
 
+        // TODO figure out lifetimes for set.with_fields()
         for field in fields {
-            if input.len() < field.length as usize {
-                tracing::trace!("early exit, no more fields, next field: {:?}", field);
-                break;
-            }
-
-            // TODO better slicing, lot's of potential errors ...
-            // make the parser take care of that?
-            let data = &input[0..field.length as usize];
-            input = &input[field.length as usize..];
+            let rs = field.read(input).unwrap();
+            input = rs.0;
+            let data = rs.1;
 
             if let Some(NameFn(name, parser)) = self.parsers.get(&field.id) {
                 tracing::trace!(parser = name.as_str(), "pre parse: {:?} {:?}", field, data);

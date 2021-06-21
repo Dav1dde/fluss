@@ -11,13 +11,16 @@ pub enum FlowType {
 }
 
 #[serde_as]
-#[derive(Debug, Copy, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Fluss {
     pub r#type: FlowType,
     pub time_received: DateTime<Utc>,
 
     #[serde_as(as = "DurationMilliSeconds")]
     pub flow_age: Duration,
+
+    pub ingress_interface: u32,
+    pub egress_interface: u32,
 
     pub bytes: u64,
     pub packets: u64,

@@ -1,5 +1,5 @@
 use nom::bytes::complete::take;
-use nom::number::complete::{be_u16, be_u32};
+use nom::number::complete::{be_u16, be_u32, be_u8};
 use nom::IResult;
 use nom::{call, complete, cond, do_parse, length_count, many1, named, peek, switch, take};
 
@@ -16,6 +16,25 @@ pub struct Packet<'a> {
 pub struct DataSet<'a> {
     pub id: u16,
     pub data: &'a [u8],
+}
+
+impl<'a> DataSet<'a> {
+    // TODO: I think these lifetimes are bad
+    pub fn with_fields(
+        &self,
+        fields: &'a [FieldSpecifier],
+    ) -> impl Iterator<Item = (&FieldSpecifier, &[u8])> {
+        let mut input = self.data;
+
+        fields.iter().map(move |field| {
+            // TODO get rid of panic
+            let rs = field
+                .read(input)
+                .unwrap_or_else(|r| panic!("failed to parse field {:?}: {:?}", field, r));
+            input = rs.0;
+            (field, rs.1)
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +55,23 @@ pub struct FieldSpecifier {
     pub id: u16,
     pub length: u16,
     pub enterprise_id: Option<u32>,
+}
+
+impl FieldSpecifier {
+    pub fn read<'a>(&self, input: &'a [u8]) -> IResult<&'a [u8], &'a [u8]> {
+        // TODO make this prettier / use named!(pub read ...)
+        if self.length < u16::MAX {
+            return take(self.length)(input);
+        }
+
+        let (input, length) = be_u8(input)?;
+        if length < u8::MAX {
+            return take(length)(input);
+        }
+
+        let (input, length) = be_u16(input)?;
+        take(length)(input)
+    }
 }
 
 named!(
