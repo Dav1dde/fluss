@@ -27,6 +27,7 @@ pub struct TemplateRecord {
 #[derive(Debug)]
 pub enum Set<'a> {
     DataSet(DataSet<'a>),
+    OptionsSet,
     TemplateSet(Vec<TemplateRecord>),
 }
 
@@ -71,6 +72,15 @@ pub fn parse_template_set(input: &[u8]) -> IResult<&[u8], Set> {
     Ok((input, Set::TemplateSet(sets)))
 }
 
+pub fn parse_options_set(input: &[u8]) -> IResult<&[u8], Set> {
+    let (input, _) = be_u16(input)?; // set id
+    let (input, length) = be_u16(input)?;
+
+    let (input, _data) = take(length - 4)(input)?;
+
+    Ok((input, Set::OptionsSet))
+}
+
 named!(
     parse_data_set<Set>,
     do_parse!(
@@ -86,6 +96,7 @@ named!(
     switch!(
         peek!(be_u16),
         2 => call!(parse_template_set) |
+        3 => call!(parse_options_set) |
         _ => call!(parse_data_set)
     )
 );

@@ -18,14 +18,15 @@ const IPFIX_FLOW_END_SYSUPTIME: u16 = 21;
 const IPFIX_FLOW_START_SYSUPTIME: u16 = 22;
 const IPFIX_BYTES_OUT: u16 = 23;
 const IPFIX_PACKETS_OUT: u16 = 24;
+const IPFIX_MAC_SRC: u16 = 56;
 const IPFIX_VLAN_ID: u16 = 58;
 const IPFIX_POST_VLAN_ID: u16 = 59;
-const IPFIX_MAC_SRC: u16 = 80;
 const IPFIX_MAC_DST: u16 = 81;
 const IPFIX_POST_NAT_IPV4_SRC_ADDR: u16 = 225;
 const IPFIX_POST_NAT_IPV4_DST_ADDR: u16 = 226;
 const IPFIX_POST_NAPT_SRC_PORT: u16 = 227;
 const IPFIX_POST_NAPT_DST_PORT: u16 = 228;
+const IPFIX_ETHERNET_TYPE: u16 = 256;
 
 pub struct IpfixParser {}
 
@@ -47,6 +48,7 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
     fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
         let mut bytes = 0;
         let mut packets = 0;
+        let mut ethernet_type = 0;
         let mut src_mac = MacAddr6::broadcast();
         let mut dst_mac = MacAddr6::broadcast();
         let mut src_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -68,6 +70,11 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
 
         let mut input = set.data;
         for field in fields {
+            if input.len() < field.length as usize {
+                tracing::trace!("early exit, no more fields, next field: {:?}", field);
+                break;
+            }
+
             // TODO better slicing, lot's of potential errors ...
             // make the parser take care of that?
             let data = &input[0..field.length as usize];
@@ -79,6 +86,8 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
                 IPFIX_PACKETS_IN => packets = parse_number(data).as_u64().unwrap(),
                 IPFIX_BYTES_OUT => bytes = parse_number(data).as_u64().unwrap(),
                 IPFIX_PACKETS_OUT => packets = parse_number(data).as_u64().unwrap(),
+
+                IPFIX_ETHERNET_TYPE => ethernet_type = parse_number(data).as_u16().unwrap(),
 
                 IPFIX_FLOW_END_SYSUPTIME => {
                     end = Duration::from_millis(parse_number(data).as_u64().unwrap())
@@ -132,6 +141,8 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
 
             bytes,
             packets,
+
+            ethernet_type,
 
             src_mac,
             dst_mac,

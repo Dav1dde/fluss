@@ -22,6 +22,8 @@ pub struct Fluss {
     pub bytes: u64,
     pub packets: u64,
 
+    pub ethernet_type: u16,
+
     #[serde_as(as = "DisplayFromStr")]
     pub src_mac: MacAddr6,
     #[serde_as(as = "DisplayFromStr")]

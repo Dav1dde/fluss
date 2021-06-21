@@ -47,6 +47,7 @@ where
                     None
                 }
                 DataSet(data) => Some(self.parse_data_set(data).into_iter()),
+                _ => None,
             })
             .flatten()
     }
@@ -97,6 +98,11 @@ impl<'a> Parser<'a> for FieldParser {
         let mut input = set.data;
 
         for field in fields {
+            if input.len() < field.length as usize {
+                tracing::trace!("early exit, no more fields, next field: {:?}", field);
+                break;
+            }
+
             // TODO better slicing, lot's of potential errors ...
             // make the parser take care of that?
             let data = &input[0..field.length as usize];
