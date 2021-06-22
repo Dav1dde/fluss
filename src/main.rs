@@ -1,15 +1,53 @@
 use clap::{App, Arg};
+use fluss::ipfix::{
+    parser::{DataSet, FieldSpecifier},
+    Parser,
+};
 use tokio::net::UdpSocket;
+
+enum Either<Left, Right> {
+    Left(Left),
+    Right(Right),
+}
+
+impl<'a, L, R, T> Parser<'a> for Either<L, R>
+where
+    L: Parser<'a, Output = T>,
+    R: Parser<'a, Output = T>,
+{
+    type Output = T;
+
+    fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
+        match self {
+            Self::Left(left) => left.parse(fields, set),
+            Self::Right(right) => right.parse(fields, set),
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let app = App::new("ghcp")
+    let app = App::new("fluss")
         .arg(
             Arg::with_name("verbosity")
                 .long("verbose")
                 .short("v")
                 .multiple(true)
                 .help("verbosity level"),
+        )
+        .arg(
+            Arg::with_name("debug")
+                .long("debug")
+                .short("d")
+                .takes_value(false)
+                .help("enables additional debug output, does not change verbosity"),
+        )
+        .arg(
+            Arg::with_name("listen")
+                .long("listen")
+                .short("l")
+                .default_value("0.0.0.0:2055")
+                .help("listen/bind port for netflow traffic"),
         )
         .arg(
             Arg::with_name("publisher")
@@ -37,9 +75,16 @@ async fn main() -> anyhow::Result<()> {
         _ => panic!("unknown or no publisher"),
     };
 
-    let socket = UdpSocket::bind("0.0.0.0:9999").await?;
+    let listen = app.value_of("listen").unwrap();
+    let socket = UdpSocket::bind(listen).await?;
+    tracing::info!("listening for netflow traffic on: {}", listen);
 
-    let session = fluss::ipfix::Session::new(fluss::produce::IpfixParser::new());
+    let parser = fluss::produce::IpfixParser::new();
+    let parser = match app.is_present("debug") {
+        true => Either::Left(fluss::ipfix::DebugParser::new(parser)),
+        false => Either::Right(parser),
+    };
+    let session = fluss::ipfix::Session::new(parser);
 
     let mut buf = vec![0; u16::MAX as usize];
     loop {

@@ -10,14 +10,31 @@ pub enum FlowType {
     IPFIX,
 }
 
+#[derive(Debug, Copy, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FlowDirection {
+    Ingress,
+    Egress,
+    Unknown,
+}
+
+impl Default for FlowDirection {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+// TODO: make fields optional
 #[serde_as]
 #[derive(Debug, Clone, Serialize)]
 pub struct Fluss {
+    // TODO: receive metadata, actual timestamp at receive time not parse time, source addr
     pub r#type: FlowType,
     pub time_received: DateTime<Utc>,
 
     #[serde_as(as = "DurationMilliSeconds")]
     pub flow_age: Duration,
+    pub flow_direction: FlowDirection,
 
     pub ingress_interface: u32,
     pub egress_interface: u32,

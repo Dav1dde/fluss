@@ -3,6 +3,7 @@ use nom::number::complete::{be_u128, be_u16, be_u32, be_u64, be_u8};
 use nom::{call, named};
 use serde::Serialize;
 use serde_with::rust::display_fromstr;
+use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 #[derive(Debug, Serialize)]
@@ -45,6 +46,24 @@ pub enum Value<'a> {
     #[serde(with = "display_fromstr")]
     MacAddr8(MacAddr8),
     Unknown(&'a [u8]),
+}
+
+impl<'a> fmt::Display for Value<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::U8(val) => write!(f, "{}", val),
+            Self::U16(val) => write!(f, "{}", val),
+            Self::U32(val) => write!(f, "{}", val),
+            Self::U64(val) => write!(f, "{}", val),
+            Self::Bytes(val) => write!(f, "{:?}", val),
+            Self::String(val) => write!(f, "{}", val),
+            Self::Ipv4Addr(val) => write!(f, "{}", val),
+            Self::Ipv6Addr(val) => write!(f, "{}", val),
+            Self::MacAddr6(val) => write!(f, "{}", val),
+            Self::MacAddr8(val) => write!(f, "{}", val),
+            Self::Unknown(val) => write!(f, "{:?}", val),
+        }
+    }
 }
 
 macro_rules! val_as {
@@ -197,4 +216,8 @@ pub fn parse_mac(input: &[u8]) -> Value {
         8 => parse_mac8(input),
         _ => panic!("invalid byte length {} for mac address", input.len()),
     }
+}
+
+pub fn parse_string(input: &[u8]) -> Value {
+    Value::String(String::from_utf8_lossy(input).to_string())
 }

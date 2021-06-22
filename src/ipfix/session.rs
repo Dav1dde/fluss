@@ -1,5 +1,7 @@
 use super::parser::{DataSet, FieldSpecifier, Packet, TemplateRecord};
-use crate::protocol::{parse_ipv4, parse_ipv6, parse_mac, parse_number, Record, RecordSet, Value};
+use crate::protocol::{
+    parse_ipv4, parse_ipv6, parse_mac, parse_number, parse_string, Record, RecordSet, Value,
+};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::iter::Iterator;
@@ -55,6 +57,7 @@ where
     fn add_records(&self, records: &[TemplateRecord]) {
         let mut templates = self.templates.write();
         for record in records {
+            tracing::trace!("template: {}, fields: {:?}", record.id, record.fields);
             templates.insert(record.id, record.fields.clone());
         }
     }
@@ -79,6 +82,50 @@ where
 
 pub type FieldExtractor = fn(&[u8]) -> Value;
 struct NameFn(String, FieldExtractor);
+
+pub struct DebugParser<T> {
+    parsers: HashMap<u16, NameFn>,
+    delegate: T,
+}
+
+impl<T> DebugParser<T> {
+    pub fn new(parser: T) -> Self {
+        Self {
+            parsers: get_default_field_parsers(),
+            delegate: parser,
+        }
+    }
+
+    pub fn set_parser(
+        &mut self,
+        id: u16,
+        name: impl Into<String>,
+        extractor: FieldExtractor,
+    ) -> &mut Self {
+        self.parsers.insert(id, NameFn(name.into(), extractor));
+        self
+    }
+}
+
+impl<'a, T> Parser<'a> for DebugParser<T>
+where
+    T: Parser<'a>,
+{
+    type Output = T::Output;
+
+    fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
+        for (field, data) in set.with_fields(fields) {
+            match self.parsers.get(&field.id) {
+                Some(NameFn(name, parser)) => {
+                    tracing::info!("{}:{} = {:?}", field.id, name, parser(data))
+                }
+                None => tracing::info!("{}:<???> = {:?}", field.id, data),
+            }
+        }
+
+        self.delegate.parse(fields, set)
+    }
+}
 
 pub struct FieldParser {
     parsers: HashMap<u16, NameFn>,
@@ -212,6 +259,7 @@ fn get_default_field_parsers() -> HashMap<u16, NameFn> {
         58 => ("vlanId", parse_number),
         59 => ("postVlanId", parse_number),
         60 => ("ipVersion", parse_number),
+        61 => ("flowDirection", parse_number),
         62 => ("ipNextHopIPv6Address", parse_ipv6),
         63 => ("bgpNextHopIPv6Address", parse_ipv6),
         64 => ("ipv6ExtensionHeaders", parse_number),
@@ -227,8 +275,8 @@ fn get_default_field_parsers() -> HashMap<u16, NameFn> {
         // 79 => ("mplsLabelStackEntry10", mpls_stack),
         80 => ("destinationMacAddress", parse_mac),
         81 => ("postSourceMacAddress", parse_mac),
-        82 => ("interfaceName", parse_number),
-        83 => ("interfaceDescription", parse_number),
+        82 => ("interfaceName", parse_string),
+        83 => ("interfaceDescription", parse_string),
         84 => ("samplerName", parse_number),
         85 => ("octetTotalCount", parse_number),
         86 => ("packetTotalCount", parse_number),
@@ -319,9 +367,32 @@ fn get_default_field_parsers() -> HashMap<u16, NameFn> {
         213 => ("headerLengthIPv4", parse_number),
         214 => ("mplsPayloadLength", parse_number),
         224 => ("ipTotalLength", parse_number),
+        218 => ("tcpSynTotalCount", parse_number),
+        219 => ("tcpFinTotalCount", parse_number),
+        220 => ("tcpRstTotalCount", parse_number),
+        221 => ("tcpPshTotalCount", parse_number),
+        222 => ("tcpAckTotalCount", parse_number),
+        222 => ("tcpAckTotalCount", parse_number),
+        223 => ("tcpUrgTotalCount", parse_number),
         225 => ("postNATSourceIPv4Address", parse_ipv4),
         226 => ("postNATDestinationIPv4Address", parse_ipv4),
         227 => ("postNAPTSourceTransportPort", parse_number),
-        228 => ("postNAPTDestinationTransportPort", parse_number)
+        228 => ("postNAPTDestinationTransportPort", parse_number),
+        233 => ("firewallEvent", parse_number),
+        240 => ("ethernetHeaderLength", parse_number),
+        243 => ("dot1qVlanId", parse_number),
+        244 => ("dot1qPriority", parse_number),
+        256 => ("ethernetType", parse_number),
+        352 => ("layer2OctetDeltaCount", parse_number),
+        353 => ("layer2OctetTotalCount", parse_number),
+        354 => ("ingressUnicastPacketTotalCount", parse_number),
+        355 => ("ingressMulticastPacketTotalCount", parse_number),
+        356 => ("ingressBroadcastPacketTotalCount", parse_number),
+        357 => ("egressUnicastPacketTotalCount", parse_number),
+        358 => ("egressBroadcastPacketTotalCount", parse_number),
+        359 => ("monitoringIntervalStartMilliSeconds", parse_number),
+        360 => ("monitoringIntervalEndMilliSeconds", parse_number),
+        368 => ("ingressInterfaceType", parse_number),
+        369 => ("egressInterfaceType", parse_number)
     }
 }

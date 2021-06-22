@@ -1,4 +1,4 @@
-use crate::fluss::{FlowType, Fluss};
+use crate::fluss::{FlowDirection, FlowType, Fluss};
 use crate::ipfix::parser::{DataSet, FieldSpecifier};
 use crate::protocol::{parse_ipv4, parse_mac, parse_number};
 use macaddr::MacAddr6;
@@ -23,6 +23,7 @@ const IPFIX_PACKETS_OUT: u16 = 24;
 const IPFIX_MAC_SRC: u16 = 56;
 const IPFIX_VLAN_ID: u16 = 58;
 const IPFIX_POST_VLAN_ID: u16 = 59;
+const IPFIX_FLOW_DIRECTION: u16 = 61;
 const IPFIX_MAC_DST: u16 = 81;
 const IPFIX_POST_NAT_IPV4_SRC_ADDR: u16 = 225;
 const IPFIX_POST_NAT_IPV4_DST_ADDR: u16 = 226;
@@ -50,6 +51,7 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
     fn parse(&self, fields: &[FieldSpecifier], set: &DataSet<'a>) -> Option<Self::Output> {
         let mut bytes = 0;
         let mut packets = 0;
+        let mut flow_direction = FlowDirection::Unknown;
         let mut ingress_interface = 0;
         let mut egress_interface = 0;
         let mut ethernet_type = 0;
@@ -79,6 +81,14 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
                 IPFIX_PACKETS_IN => packets = parse_number(data).as_u64().unwrap(),
                 IPFIX_BYTES_OUT => bytes = parse_number(data).as_u64().unwrap(),
                 IPFIX_PACKETS_OUT => packets = parse_number(data).as_u64().unwrap(),
+
+                IPFIX_FLOW_DIRECTION => {
+                    flow_direction = match parse_number(data).as_u16().unwrap() {
+                        0 => FlowDirection::Ingress,
+                        1 => FlowDirection::Egress,
+                        _ => FlowDirection::Unknown,
+                    }
+                }
 
                 IPFIX_INGRESS_INTERFACE => ingress_interface = parse_number(data).as_u32().unwrap(),
                 IPFIX_EGRESS_INTERFACE => egress_interface = parse_number(data).as_u32().unwrap(),
@@ -134,6 +144,7 @@ impl<'a> crate::ipfix::session::Parser<'a> for IpfixParser {
             time_received: chrono::offset::Utc::now(),
 
             flow_age: end - start,
+            flow_direction,
 
             bytes,
             packets,
